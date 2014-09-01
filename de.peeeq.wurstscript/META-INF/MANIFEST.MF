@@ -95,3 +95,5 @@ Export-Package: com.google.common.annotations,
  org.junit.runners.model
 Import-Package: de.peeeq.wurstscript.jassIm
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Require-Bundle: org.eclipse.jgit;bundle-version="3.4.0",
+ com.jcraft.jsch;bundle-version="0.1.50"
