@@ -1,72 +1,126 @@
 package OnUnitEnterLeave
+
 import MapBounds
 import NoWurst
 import Unit
 import Trigger
 import Player
 import TempGroups
-import PrintingHelper
 import AbilityObjEditing
-import ObjectIds
 import initlater RegisterEvents
 
+/**
+ * Rawcode for the undefend ability to detect leavers
+ */
+constant int LEAVER_ABILITY_ID = '!e@$'
 
+/**
+ * Unit who fired etheir the enter or leave event
+ */
+unit triggerUnit = null
 
+/**
+ * "events"
+ */
+constant trigger onEnterTrigger = CreateTrigger()
+constant trigger onLeaveTrigger = CreateTrigger()
 
-constant eventTrigger = CreateTrigger()
-constant DO_INDEXING = true
-
-class UnitIndex
-	unit u
-	
-	construct(unit u)
-		this.u = u
-		u.setUserData(this castTo int)
-		
-	ondestroy
-		u.setUserData(0)
-
+/**
+ * Get the unit who fired the event
+ */
 public function getEnterLeaveUnit() returns unit
-	return tempUnit
-	
+	return triggerUnit
+
+/**
+ * Register a code to fire when a unit enters the map
+ */	
 public function onEnter(code c)
-	eventTrigger.addCondition(Condition(c))
+	onEnterTrigger.addCondition(Condition(c))
 
+/**
+ * Register a code to fire when a unit leaves the map
+ */
 public function onLeave(code c)
-	eventTrigger.addAction(c)
+	onLeaveTrigger.addCondition(Condition(c))
 
-unit tempUnit = null
+/**
+ * Check if the unit has the leaver ability (true if it does)
+ */
+function hasLeaverDetector(unit whichUnit) returns boolean
+	return whichUnit.getAbilityLevel(LEAVER_ABILITY_ID) != 0
+	
+/**
+ * Add leaver ability to unit (false if already has it)
+ */
+function addLeaverDetector(unit whichUnit) returns boolean
+	if (hasLeaverDetector(whichUnit) == false)
+		whichUnit.addAbility(LEAVER_ABILITY_ID)
+		whichUnit.makeAbilityPermanent(LEAVER_ABILITY_ID, true)
+		
+		return true
+	
+	return false
 
-function enter()
-	tempUnit = GetEnteringUnit()..addAbility(ABILITY_ID)..makeAbilityPermanent(ABILITY_ID, true)
-	if DO_INDEXING
-		new UnitIndex(tempUnit)
-	eventTrigger.evaluate()
-	tempUnit = null
+/**
+ * Take the unit and fire enter or leave event
+ */
+function fireEvent(unit whichUnit, trigger whichEvent)
+	unit prevTriggerUnit = triggerUnit
+	
+	triggerUnit = whichUnit
+	whichEvent.evaluate()
+	triggerUnit = prevTriggerUnit
+	
+	prevTriggerUnit = null
+
+function onEnterRegionEx() returns boolean
+	addLeaverDetector(GetEnteringUnit())
+	fireEvent(GetEnteringUnit(), onEnterTrigger)
+	
+	return false
+
+/**
+ * Add leaver detector to units who enter/were in the map and then fire
+ * the entering event
+ */	
+function checkEnteringUnits()
+	trigger enterTrigger = CreateTrigger()
+	
+	enterTrigger.registerEnterRegion(boundRegion, null)
+	enterTrigger.addCondition(Condition(function onEnterRegionEx))
+	
+	GroupEnumUnitsInRect(ENUM_GROUP, boundRect, Condition(function onEnterRegionEx))
+	
+	enterTrigger = null
+
+function checkLeaversEx()
+	unit leaverUnit = GetFilterUnit()
+	
+	if (hasLeaverDetector(leaverUnit) == false)
+		fireEvent(leaverUnit, onLeaveTrigger)
+		
+	leaverUnit = null
+
+/**
+ * Detect when a unit leaves and fire the event
+ */
+function checkLeavers()
+	registerPlayerUnitEvent(EVENT_PLAYER_UNIT_ISSUED_ORDER, function checkLeaversEx)
+
+function disableLeaverAbilityForPlayers()
+	for i = 0 to bj_MAX_PLAYER_SLOTS-1
+		players[i].setAbilityAvailable(LEAVER_ABILITY_ID, false)
 	
 init
-	CreateTrigger()..registerEnterRegion(boundRegion, null)
-	..addCondition(Condition(() -> enter()))
+	checkEnteringUnits()
+	checkLeavers()
+	disableLeaverAbilityForPlayers()    
+
+@compiletime function generateLeaverAbility()
+	AbilityDefinitionDefend leaverAbility = new AbilityDefinitionDefend(LEAVER_ABILITY_ID)
 	
-	registerPlayerUnitEvent(EVENT_PLAYER_UNIT_ISSUED_ORDER, () -> begin
-		let leavingUnit = GetFilterUnit()
-		if leavingUnit.getAbilityLevel(ABILITY_ID) == 0
-			tempUnit = leavingUnit
-			destroy tempUnit.getUserData() castTo UnitIndex
-			eventTrigger.execute()
-			tempUnit = null
-	end)
-	ABILITY_ID = '!e@$'
-	for i = 0 to bj_MAX_PLAYER_SLOTS-1
-		players[i].setAbilityAvailable(ABILITY_ID, false)
-    
-	GroupEnumUnitsInRect(ENUM_GROUP, boundRect, Filter(() -> enter()))
-    
-
-int ABILITY_ID = '!e@$'
-
-@compiletime function generateAbility()
-	new AbilityDefinitionDefend(ABILITY_ID)
-	..setName("Deindex Detect")..setEditorSuffix("(Unit Indexer)")
-	..setArtCaster("")..setIconNormal("")..setRace(Race.Unknown)
+	leaverAbility.setName("Leaver Detect")
+	leaverAbility.setArtCaster("")
+	leaverAbility.setIconNormal("")
+	leaverAbility.setRace(Race.Unknown)
 	
